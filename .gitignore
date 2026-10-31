@@ -1,0 +1,10 @@
+# secrets: never commit these
+credentials.json
+token.json
+service_account.json
+drive_folder.json
+# photos and test output
+photos/
+gallery/
+ai_test_*.jpg
+__pycache__/

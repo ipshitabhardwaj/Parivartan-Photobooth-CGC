@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="Sci-Fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>CGC SQUARE</title>
+  <meta name="theme-color" content="#dde4ff" id="themeColor">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Theme doodle wallpapers: only the selected look's layer is visible -->
+  <div class="patterns" aria-hidden="true">
+    <i data-for="Sci-Fi"></i><i data-for="Anime"></i><i data-for="Cats"></i><i data-for="Vintage"></i>
+  </div>
+
+  <div class="app">
+    <header class="top">
+      <h1 class="title">CGC SQUARE</h1>
+    </header>
+
+    <p id="hint" class="hint" aria-live="polite">Press SPACE to take your photo</p>
+
+    <main class="booth">
+      <!-- The viewfinder: live camera, countdown, then the finished photo -->
+      <div class="viewfinder" id="viewfinder" data-mode="live">
+        <div class="photo-square" id="photoSquare" data-mode="live">
+          <video id="webcam" autoplay playsinline muted></video>
+          <img id="resultImage" alt="Your reimagined photo" class="hidden" draggable="false" />
+
+          <svg id="faceGuide" class="face-guide" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div id="countdown" class="countdown hidden" aria-hidden="true"></div>
+          <div id="flash" class="flash" aria-hidden="true"></div>
+
+          <div id="loadingOverlay" class="loading-overlay hidden" role="status">
+            <div class="iris" aria-hidden="true"></div>
+            <p id="loadingStatusText" class="loading-text">Making the magic happen</p>
+          </div>
+
+          <div id="cameraPlaceholder" class="camera-placeholder hidden">
+            <p id="cameraMessage">Camera access needed</p>
+            <button id="retryCameraBtn" type="button" class="btn small">Allow camera</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Looks: pick with the A B C D keys (or tap) -->
+      <div class="looks" role="radiogroup" aria-label="Look">
+        <button type="button" class="look active" role="radio" aria-checked="true" data-theme="Sci-Fi" data-key="a">
+          <span class="key" aria-hidden="true">A</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 5 13.5h6L10 22l9-12h-6.2z"/></svg>
+          <span>Sci-Fi</span>
+        </button>
+        <button type="button" class="look" role="radio" aria-checked="false" data-theme="Anime" data-key="b">
+          <span class="key" aria-hidden="true">B</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.1 7.4 7.4 2.1-7.4 2.1L12 21.5l-2.1-7.4L2.5 12l7.4-2.1z"/></svg>
+          <span>Anime</span>
+        </button>
+        <button type="button" class="look" role="radio" aria-checked="false" data-theme="Cats" data-key="c">
+          <span class="key" aria-hidden="true">C</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.8 8.7 6.7a8.4 8.4 0 0 1 6.6 0L19 3.8V13a7 7 0 0 1-14 0z"/><circle class="fill" cx="9.3" cy="12.4" r="1.1"/><circle class="fill" cx="14.7" cy="12.4" r="1.1"/></svg>
+          <span>Cats</span>
+        </button>
+        <button type="button" class="look" role="radio" aria-checked="false" data-theme="Vintage" data-key="d">
+          <span class="key" aria-hidden="true">D</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.2" r="3.4"/></svg>
+          <span>Vintage</span>
+        </button>
+      </div>
+
+      <!-- QR code of the Google Drive folder + the number of the latest photo -->
+      <section class="qr" aria-label="Get your photos">
+        <div class="qr-code">
+          <img id="qrImg" class="hidden" alt="QR code for the Google Drive photo folder" draggable="false" />
+          <span id="qrEmpty" class="qr-empty">QR appears when Google Drive is connected</span>
+        </div>
+        <div class="qr-text">
+          <p class="qr-title">Scan to get your photos</p>
+          <p id="photoNo" class="qr-number hidden"><span>Find your photo</span><b id="photoNoValue"></b></p>
+        </div>
+      </section>
+
+      <div id="statusBanner" class="status hidden" role="status"></div>
+    </main>
+  </div>
+
+  <canvas id="captureCanvas" class="hidden"></canvas>
+  <script src="svgfx.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

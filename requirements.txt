@@ -1,0 +1,22 @@
+flask
+pillow
+requests
+numpy
+opencv-python-headless   # cleaner smoothing and line art for the quick look
+onnxruntime              # person cut-out for the quick Sci-Fi look (optional)
+
+# --- AI repainting (Stable Diffusion img2img) ---
+diffusers
+transformers
+accelerate
+peft
+safetensors
+huggingface_hub
+# torch is installed separately so you get the CUDA build:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+
+# --- Google Drive upload + QR code of the folder ---
+google-api-python-client
+google-auth
+google-auth-oauthlib
+segno
