@@ -8,3 +8,6 @@ photos/
 gallery/
 ai_test_*.jpg
 __pycache__/
+.launcher_state.json
+.browser_profile/
+.ai_model_ok

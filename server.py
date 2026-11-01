@@ -21,6 +21,9 @@ STATIC_FILES = {
     "bg-scifi.svg", "bg-anime.svg", "bg-cats.svg", "bg-vintage.svg",   # theme wallpapers
 }
 
+import logging
+logging.getLogger('werkzeug').setLevel(logging.WARNING)        # don't print a line for every page file and status poll
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # photos are small; refuse anything huge
 
@@ -66,7 +69,8 @@ def status():
             "reason": ollama["reason"],
         },
         "drive": {"connected": drive_storage.DRIVE.folder_id is not None, "pending": drive_storage.DRIVE.pending(), "error": drive_storage.DRIVE.error},
-        "ai": {"available": ai_painter.available(), "model": ai_painter.MODEL_ID, "reason": ai_painter.why_not()},
+        "ai": {"available": ai_painter.available(), "loaded": ai_painter.loaded(), "warming": ai_painter.warming(), "model": ai_painter.MODEL_ID,
+               "reason": ai_painter.why_not(), "error": ai_painter.last_error()},
     })
 
 

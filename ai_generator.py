@@ -25,12 +25,15 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import requests
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
+import numpy as np
+
 try:
     import cv2
-    import numpy as np
     HAS_CV2 = True
-except ImportError:                    # still works, just a less refined smoothing
+except Exception as exc:               # missing, or built for a different NumPy: still works, just less refined
     HAS_CV2 = False
+    print(f"[Quality] OpenCV is not usable ({type(exc).__name__}): smoothing, exposure fix and cut-outs are reduced. "
+          "Fix: py -m pip install --upgrade opencv-python-headless   (or just run start_kiosk.bat)")
 
 import ai_painter
 import exposure

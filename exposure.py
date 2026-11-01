@@ -13,7 +13,7 @@ from recipes import FACE
 try:
     import cv2
     HAVE_CV2 = True
-except ImportError:
+except Exception:                       # missing, or built for a different NumPy (the check is in ai_generator's log line)
     HAVE_CV2 = False
 
 TARGET = 0.50            # desired average brightness of the face (0..1)

@@ -3,7 +3,30 @@
 Webcam photo, pick a look (Sci-Fi, Anime, Cats, Vintage), and a local AI model repaints it.
 If the AI isn't set up (or is too slow) it falls back to quick looks, and it still works if the server is down.
 
-## Run
+## Start everything with one command
+
+Double-click **`start_kiosk.bat`** (or run it in a terminal). That is the only thing you need to run.
+
+The first time it sets everything up (after that it takes seconds, because anything already fine is skipped):
+1. installs missing Python libraries and fixes the OpenCV / NumPy 2 mismatch
+2. with an NVIDIA GPU: asks once, then installs the GPU build of PyTorch (about 3 GB) and downloads the AI model (about 2.3 GB)
+3. if `credentials.json` is present but you haven't signed in to Google yet: opens the one-time Google sign-in
+4. starts Ollama only if the AI painter isn't in use
+5. starts the server, waits until the AI model is loaded, then opens the kiosk full screen in Chrome or Edge
+
+The AI model download (about 2.3 GB) happens on the first start and can take 15 minutes or more on a slow connection. The
+launcher waits about 2.5 minutes for it, then opens the kiosk anyway: photos use the quick looks until the download
+finishes, then the AI switches on by itself (the window prints `[AI] ready`). If the connection drops, the download resumes
+where it stopped. Keep the launcher window open. After the first time the model is on your computer and starts in seconds.
+
+Stop it with Ctrl+C in the launcher window. In the full-screen kiosk, Alt+F4 closes the browser. Options:
+`start_kiosk.bat --check` shows what is missing without changing anything, `--window` opens a normal window instead of full screen,
+`--yes` answers every question with yes, `--no-ai` skips the AI painter, `--no-browser` skips opening the browser.
+The first time, allow the camera when Chrome asks; it is remembered (the kiosk uses its own browser profile in `.browser_profile`).
+
+The sections below explain each part, and how to run things by hand (`py server.py`) if you ever want to.
+
+## Run by hand (optional)
 
 ```bash
 cd kiosk
@@ -180,6 +203,6 @@ access on the kiosk computer.
 ## Files
 
 `server.py` routes · `ollama_client.py` Ollama bridge · `recipes.py` look defaults and validation ·
-`ai_painter.py` AI repainting · `exposure.py` webcam exposure fix · `setup_ai.py` one-time setup + speed test · `ai_generator.py` Pipeline and Pillow quick looks · `segment.py` person cut-out + rim light · `svgfx.js` SVG filters, frames, stickers, face outline · `app.js` UI ·
+`run_kiosk.py` / `start_kiosk.bat` one-command launcher · `ai_painter.py` AI repainting · `exposure.py` webcam exposure fix · `setup_ai.py` one-time setup + speed test · `ai_generator.py` Pipeline and Pillow quick looks · `segment.py` person cut-out + rim light · `svgfx.js` SVG filters, frames, stickers, face outline · `app.js` UI ·
 `drive_storage.py` numbered saving, Drive upload and QR · `setup_drive.py` one-time Google sign-in · `bg-*.svg` theme wallpapers (regenerate with `python make_patterns.py`) ·
 `check_sync.py` checks that `recipes.py` and `svgfx.js` agree (run it after editing either)

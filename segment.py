@@ -16,7 +16,7 @@ try:
     import cv2
     import onnxruntime as ort
     HAVE_LIBS = True
-except ImportError:
+except Exception:                       # missing, or OpenCV built for a different NumPy: the Sci-Fi scene falls back to a frame
     HAVE_LIBS = False
 
 from recipes import FACE

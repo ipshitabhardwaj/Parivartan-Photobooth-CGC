@@ -38,6 +38,8 @@ except Exception as exc:                      # not installed, or a broken CUDA/
     HAVE_LIBS = False
     IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOADED_MARKER = os.path.join(HERE, ".ai_model_ok")      # written after the first successful load
 MODEL_ID = os.environ.get("AI_MODEL", "Lykon/dreamshaper-7")
 _lcm = os.environ.get("AI_LCM_LORA", "latent-consistency/lcm-lora-sdv1-5").strip()
 LCM_LORA = "" if _lcm.lower() in ("", "none", "off", "0") else _lcm
@@ -160,23 +162,47 @@ class _Painter:
                 self.offloaded = True
             where = torch.cuda.get_device_name(0) if DEVICE == "cuda" else DEVICE
             print(f"[AI] ready in {time.time() - started:.1f}s on {where}" + (" (CPU offload)" if self.offloaded else ""))
+            self.last_error = ""
+            try:
+                open(LOADED_MARKER, "w").close()
+            except OSError:
+                pass
 
     def _free(self):
         self.pipe = None
         if HAVE_LIBS and torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+    def _can_run(self):
+        """Libraries and GPU are there (ignores the temporary pause after generation errors)."""
+        return HAVE_LIBS and not (DEVICE == "cuda" and not torch.cuda.is_available())
+
+    def warming(self):
+        """True while the model is being downloaded or loaded in the background."""
+        return bool(self._warm_thread and self._warm_thread.is_alive())
+
     def warm_up_async(self):
-        """Load the model in the background so the first photo doesn't pay for it."""
-        if self.pipe is not None or (self._warm_thread and self._warm_thread.is_alive()) or not self.available():
+        """
+        Download (first time only) and load the model in the background. A dropped connection must not end this:
+        Hugging Face downloads resume where they stopped, so just try again a few times with a growing pause.
+        """
+        if self.pipe is not None or self.warming() or not self._can_run():
             return
 
         def run():
-            try:
-                self.ensure_loaded()
-            except Exception as exc:
-                self.note_failure(f"could not load the model: {exc}. Run python setup_ai.py (needs internet once)")
-        self._warm_thread = threading.Thread(target=run, daemon=True)
+            delay = 10
+            for attempt in range(1, 41):
+                try:
+                    self.ensure_loaded()
+                    return
+                except Exception as exc:
+                    self.last_error = f"could not load the model: {exc}"
+                    print(f"[AI] model load problem (attempt {attempt}): {exc}")
+                    print(f"[AI] trying again in {delay}s; an interrupted download resumes where it stopped")
+                    time.sleep(delay)
+                    delay = min(60, delay * 2)
+            print("[AI] giving up on loading the model. Check the internet connection and restart.")
+        self._warm_thread = threading.Thread(target=run, name="ai-warmup", daemon=True)
         self._warm_thread.start()
 
     # ---- painting -------------------------------------------------------------------------------------------
@@ -208,12 +234,28 @@ _painter = _Painter()
 
 
 def wants(theme):
-    """True if this look should be repainted by AI right now."""
-    return theme in AI_THEMES and _painter.available()
+    """
+    True if this look should be repainted by AI right now. Only once the model is loaded: a photo taken while it is
+    still downloading gets the quick look immediately instead of waiting (and the wait is not counted as a failure).
+    """
+    return theme in AI_THEMES and _painter.available() and _painter.pipe is not None
 
 
 def available():
     return _painter.available()
+
+
+def warming():
+    return _painter.warming()
+
+
+def loaded():
+    """True once the model is in GPU memory and the first photo will be fast."""
+    return _painter.pipe is not None
+
+
+def last_error():
+    return _painter.last_error
 
 
 def why_not():

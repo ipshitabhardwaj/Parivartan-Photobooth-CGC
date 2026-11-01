@@ -2,7 +2,7 @@ flask
 pillow
 requests
 numpy
-opencv-python-headless   # cleaner smoothing and line art for the quick look
+opencv-python-headless>=4.10   # (4.10+ works with NumPy 2) cleaner smoothing and line art for the quick look
 onnxruntime              # person cut-out for the quick Sci-Fi look (optional)
 
 # --- AI repainting (Stable Diffusion img2img) ---
