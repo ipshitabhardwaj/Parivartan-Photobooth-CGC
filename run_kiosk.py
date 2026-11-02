@@ -27,6 +27,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -305,8 +306,41 @@ def start_server(args, state):
                TRANSFORMERS_VERBOSITY="error", HF_HUB_DISABLE_SYMLINKS_WARNING="1", HF_HUB_DISABLE_TELEMETRY="1")
     if os.path.exists(os.path.join(HERE, ".ai_model_ok")):
         env["HF_HUB_OFFLINE"] = "1"          # the model is already on this computer: never wait for the network
-    say("Starting the kiosk server...")
-    return subprocess.Popen([sys.executable, "server.py"], env=env)
+    env["PYTHONIOENCODING"] = "utf-8"
+    say("Starting the kiosk server... (everything it prints is also saved in kiosk.log)")
+    log_path = os.path.join(HERE, "kiosk.log")
+    try:                                         # keep the previous run's log as kiosk.previous.log
+        if os.path.exists(log_path):
+            os.replace(log_path, os.path.join(HERE, "kiosk.previous.log"))
+    except OSError:
+        pass
+    proc = subprocess.Popen([sys.executable, "server.py"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    threading.Thread(target=_pump, args=(proc.stdout, log_path), daemon=True).start()
+    return proc
+
+
+def _pump(stream, log_path):
+    """Show the server's output in this window AND write it to kiosk.log (raw bytes, so progress bars still work)."""
+    try:
+        log = open(log_path, "ab")
+    except OSError:
+        log = None
+    try:
+        while True:
+            chunk = stream.read1(4096) if hasattr(stream, "read1") else stream.read(1)
+            if not chunk:
+                break
+            try:
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.buffer.flush()
+            except Exception:
+                pass
+            if log:
+                log.write(chunk)
+                log.flush()
+    finally:
+        if log:
+            log.close()
 
 
 def wait_for_server(proc, port, timeout=180):

@@ -55,13 +55,19 @@ def person_alpha(img):
         alpha = alpha * alpha * (3 - 2 * alpha)
         alpha = cv2.GaussianBlur(alpha, (0, 0), 1.2).astype(np.float32)   # ... then feather it a little
 
-        # Sanity: a person should fill a sensible part of the picture and be where the face outline is.
+        # Sanity: a person should fill a sensible part of the picture and be near the middle. People rarely sit exactly
+        # inside the guide, so only the small area around the centre of the face outline has to be mostly "person".
         h, w = alpha.shape
         yy, xx = np.mgrid[0:h, 0:w]
-        inside = (((xx / w - FACE["cx"]) / FACE["rx"]) ** 2 + ((yy / h - FACE["cy"]) / FACE["ry"]) ** 2) <= 1
+        core = (((xx / w - FACE["cx"]) / (FACE["rx"] * 0.55)) ** 2 + ((yy / h - FACE["cy"]) / (FACE["ry"] * 0.55)) ** 2) <= 1
+        # ... or the person can be a little lower / smaller: accept if the bottom-centre is person and coverage is healthy
+        base = alpha[int(h * 0.80):, int(w * 0.30):int(w * 0.70)]
         coverage = float((alpha > 0.5).mean())
-        if not (0.06 <= coverage <= 0.85) or float(alpha[inside].mean()) < 0.6:
-            print(f"[Segment] cut-out rejected (coverage {coverage:.0%}, face overlap {float(alpha[inside].mean()):.0%})")
+        ys, xs = np.nonzero(alpha > 0.5)
+        mid = bool(xs.size) and 0.2 <= xs.mean() / w <= 0.8 and 0.3 <= ys.mean() / h <= 0.9       # centre of mass of the shape
+        centred = float(alpha[core].mean()) >= 0.5 or float(base.mean()) >= 0.6 or (mid and coverage >= 0.05)
+        if not (0.04 <= coverage <= 0.90) or not centred:
+            print(f"[Segment] cut-out rejected (coverage {coverage:.0%}, centre {float(alpha[core].mean()):.0%})")
             return None
         return alpha
     except Exception as exc:                                         # never let segmentation break a photo

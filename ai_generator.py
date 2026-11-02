@@ -277,9 +277,17 @@ _ai_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ai")
 def _ai_recipe(theme):
     """Overlays for an AI-repainted picture: the AI already painted the scene, so Sci-Fi gets nothing on top."""
     recipe = default_recipe(theme)
-    if theme == "Sci-Fi":
-        recipe.update(stickers=[], frame="none", caption_style="none")
+    if theme == "Sci-Fi":                         # the AI painted the lab; add a light HUD on top, no frame or caption
+        recipe.update(stickers=["hud"], frame="none", caption_style="none")
+    elif theme == "Anime":                        # sparkles and petals drift over the illustration
+        recipe.update(stickers=["sparkles", "petals"], frame="none", caption_style="none")
     return recipe
+
+
+def _paint_job(source, theme):
+    """Runs on the AI worker thread, so the cut-out time counts towards the same deadline as the painting."""
+    alpha = segment.person_alpha(source) if ai_painter.STYLES[theme].get("scene_prompt") else None
+    return ai_painter.paint(source, theme, alpha)
 
 
 def _run_ai(source, theme, prepare_id):
@@ -288,7 +296,7 @@ def _run_ai(source, theme, prepare_id):
         job = _jobs.pop(prepare_id, None) if prepare_id else None
     started = job[0] if job else time.time()
     remaining = max(1.0, ai_painter.AI_BUDGET - (time.time() - started))
-    future = _ai_pool.submit(ai_painter.paint, source, theme)
+    future = _ai_pool.submit(_paint_job, source, theme)
     try:
         return future.result(timeout=remaining), "ok"
     except FutureTimeout:

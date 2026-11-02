@@ -25,9 +25,11 @@ import os
 import threading
 import time
 
+import numpy as np
 from PIL import Image, ImageEnhance
 
 import exposure
+import segment
 
 try:
     import torch
@@ -69,10 +71,22 @@ STYLES = {
                   "whimsical, pastel colors, highly detailed, masterpiece",
         "strength": 0.5,
     },
+    # Two passes: a strong repaint invents the lab around you, a gentle one keeps your face. They are merged with a
+    # person cut-out (needs segment.py); without a usable cut-out one balanced pass is used instead.
     "Sci-Fi": {
-        "prompt": "cyberpunk portrait of the same person in a futuristic lab, neon cyan and magenta rim light, glowing "
-                  "holograms, city skyline at sunset through a large window, sci-fi, cinematic lighting, highly detailed",
-        "strength": 0.65,
+        "prompt": "portrait of the same person, cyberpunk style, neon cyan rim light on the skin, glowing cybernetic "
+                  "details, detailed face, cinematic lighting",
+        "strength": 0.45,
+        "scene_prompt": "futuristic cyberpunk robotics lab interior, holographic displays, glowing blueprint screens, "
+                        "neon cyan and magenta lights, sunset city skyline seen through a large window, flying drones, "
+                        "cinematic, highly detailed, empty room",
+        "scene_strength": 0.9,
+        "scene_negative": "person, people, man, woman, face, portrait, body, text, watermark",
+        "rim": ((39, 230, 255), (255, 150, 70)),
+        "single_prompt": "cyberpunk portrait of the same person in a futuristic lab, neon cyan and magenta rim light, "
+                         "glowing holograms, city skyline at sunset through a large window, sci-fi, cinematic lighting, "
+                         "highly detailed",
+        "single_strength": 0.65,
     },
     "Vintage": {
         "prompt": "vintage black and white photobooth portrait of the same person, 1970s, soft focus, film grain, "
@@ -92,6 +106,7 @@ def _fit_square(img, size):
 class _Painter:
     def __init__(self):
         self.pipe = None
+        self.ready = False          # loaded AND warmed up: only then are photos sent here
         self.offloaded = False
         self._load_lock = threading.Lock()
         self._run_lock = threading.Lock()
@@ -117,10 +132,10 @@ class _Painter:
         self.last_error = message
         self.fails += 1
         print(f"[AI] problem: {message}")
-        if self.fails >= 2:
+        if self.fails >= 3:                    # three in a row: something is really wrong, rest for a minute
             self.fails = 0
-            self.disabled_until = time.time() + 300
-            print("[AI] paused for 5 minutes; the quick look is used meanwhile")
+            self.disabled_until = time.time() + 60
+            print("[AI] paused for 1 minute after 3 problems in a row; the quick look is used meanwhile")
 
     def note_ok(self):
         self.fails = 0
@@ -149,20 +164,31 @@ class _Painter:
 
     def ensure_loaded(self):
         with self._load_lock:
-            if self.pipe is not None:
+            if self.ready:
                 return
             started = time.time()
             print(f"[AI] loading {MODEL_ID}" + (f" + {LCM_LORA}" if LCM_LORA else "") + " ...")
-            try:
-                self.pipe = self._build(offload=False)
-            except torch.cuda.OutOfMemoryError:
-                print("[AI] GPU memory is tight, switching to CPU offload (slower)")
-                self._free()
-                self.pipe = self._build(offload=True)
-                self.offloaded = True
+            if self.pipe is None:
+                try:
+                    self.pipe = self._build(offload=False)
+                except torch.cuda.OutOfMemoryError:
+                    print("[AI] GPU memory is tight, switching to CPU offload (slower)")
+                    self._free()
+                    self.pipe = self._build(offload=True)
+                    self.offloaded = True
             where = torch.cuda.get_device_name(0) if DEVICE == "cuda" else DEVICE
-            print(f"[AI] ready in {time.time() - started:.1f}s on {where}" + (" (CPU offload)" if self.offloaded else ""))
+            print(f"[AI] model loaded in {time.time() - started:.1f}s on {where}" + (" (CPU offload)" if self.offloaded else ""))
+            # One throw-away picture now, so GPU kernels are compiled before the first real photo (it would otherwise
+            # take several extra seconds and could miss the deadline).
+            try:
+                t0 = time.time()
+                self._infer(Image.new("RGB", (SIZE, SIZE), (128, 128, 128)), "a portrait", NEGATIVE, 0.5)
+                print(f"[AI] warm-up picture done in {time.time() - t0:.1f}s")
+            except Exception as exc:
+                print(f"[AI] warm-up picture failed ({exc}); continuing")
+            self.ready = True
             self.last_error = ""
+            print(f"[AI] ready ({time.time() - started:.1f}s in total)")
             try:
                 open(LOADED_MARKER, "w").close()
             except OSError:
@@ -186,7 +212,7 @@ class _Painter:
         Download (first time only) and load the model in the background. A dropped connection must not end this:
         Hugging Face downloads resume where they stopped, so just try again a few times with a growing pause.
         """
-        if self.pipe is not None or self.warming() or not self._can_run():
+        if self.ready or self.warming() or not self._can_run():
             return
 
         def run():
@@ -206,28 +232,57 @@ class _Painter:
         self._warm_thread.start()
 
     # ---- painting -------------------------------------------------------------------------------------------
-    def paint(self, img, theme):
-        """Regenerate `img` (PIL RGB) in the style of `theme`. Returns a PIL RGB image at 768x768."""
+    def _infer(self, source, prompt, negative, strength):
+        """One img2img pass. Retries once with CPU offload if the GPU runs out of memory."""
+        seed = int.from_bytes(os.urandom(4), "little")
+        args = dict(prompt=prompt, negative_prompt=negative, image=source, strength=strength,
+                    num_inference_steps=STEPS, guidance_scale=GUIDANCE)
+        try:
+            return self.pipe(generator=torch.Generator("cpu").manual_seed(seed), **args).images[0].convert("RGB")
+        except torch.cuda.OutOfMemoryError:
+            print("[AI] out of GPU memory, retrying with CPU offload")
+            self._free()
+            self.pipe = self._build(offload=True)
+            self.offloaded = True
+            return self.pipe(generator=torch.Generator("cpu").manual_seed(seed), **args).images[0].convert("RGB")
+
+    def paint(self, img, theme, alpha=None):
+        """
+        Regenerate `img` (PIL RGB) in the style of `theme`. Returns a PIL RGB image at 768x768.
+        `alpha` is an optional person cut-out (float 0..1, any size): with it, looks that define a scene (Sci-Fi) paint
+        the surroundings strongly and the person gently, then merge them.
+        """
         style = STYLES[theme]
         self.ensure_loaded()
+        scale = lambda s: min(0.92, max(0.2, s * STRENGTH_SCALE))
+        extra = lambda text: NEGATIVE + (", " + text if text else "")
         with self._run_lock:
             source = _fit_square(exposure.normalize_exposure(img.convert("RGB")), SIZE)   # dark faces repaint badly
-            seed = int.from_bytes(os.urandom(4), "little")
-            args = dict(prompt=style["prompt"], negative_prompt=NEGATIVE + (", " + style["negative"] if style.get("negative") else ""), image=source, strength=min(0.9, max(0.2, style["strength"] * STRENGTH_SCALE)),
-                        num_inference_steps=STEPS, guidance_scale=GUIDANCE)
             started = time.time()
-            try:
-                out = self.pipe(generator=torch.Generator("cpu").manual_seed(seed), **args).images[0]
-            except torch.cuda.OutOfMemoryError:
-                print("[AI] out of GPU memory, retrying with CPU offload")
-                self._free()
-                self.pipe = self._build(offload=True)
-                self.offloaded = True
-                out = self.pipe(generator=torch.Generator("cpu").manual_seed(seed), **args).images[0]
-            print(f"[AI] {theme} painted in {time.time() - started:.1f}s")
+            if alpha is not None and style.get("scene_prompt"):
+                scene = self._infer(source, style["scene_prompt"], extra(style.get("scene_negative")), scale(style["scene_strength"]))
+                person = self._infer(source, style["prompt"], extra(style.get("negative")), scale(style["strength"]))
+                out = _merge(person, scene, alpha, style.get("rim"))
+                how = "scene + person"
+            else:
+                prompt, strength = style.get("single_prompt", style["prompt"]), style.get("single_strength", style["strength"])
+                out = self._infer(source, prompt, extra(style.get("negative")), scale(strength))
+                how = "single pass"
+            print(f"[AI] {theme} painted ({how}) in {time.time() - started:.1f}s")
         self.note_ok()
         out = out.convert("RGB").resize((768, 768), Image.LANCZOS)
         return ImageEnhance.Sharpness(out).enhance(1.25)          # img2img + upscale is a touch soft
+
+
+def _merge(person, scene, alpha, rim):
+    """Put the gently repainted person on top of the strongly repainted scene, with optional rim light."""
+    size = person.size
+    a8 = Image.fromarray((np.clip(alpha, 0, 1) * 255).astype("uint8"), "L").resize(size, Image.LANCZOS)
+    if rim:
+        soft = np.asarray(a8).astype("float32") / 255.0
+        person_rgba = segment.cutout_with_rim(person, soft, rim[0], rim[1])
+        return Image.alpha_composite(scene.convert("RGBA"), person_rgba).convert("RGB")
+    return Image.composite(person, scene, a8)
 
 
 _painter = _Painter()
@@ -238,7 +293,7 @@ def wants(theme):
     True if this look should be repainted by AI right now. Only once the model is loaded: a photo taken while it is
     still downloading gets the quick look immediately instead of waiting (and the wait is not counted as a failure).
     """
-    return theme in AI_THEMES and _painter.available() and _painter.pipe is not None
+    return theme in AI_THEMES and _painter.available() and _painter.ready
 
 
 def available():
@@ -250,8 +305,8 @@ def warming():
 
 
 def loaded():
-    """True once the model is in GPU memory and the first photo will be fast."""
-    return _painter.pipe is not None
+    """True once the model is in GPU memory and warmed up, so the first photo will be fast."""
+    return _painter.ready
 
 
 def last_error():
@@ -266,8 +321,8 @@ def warm_up_async():
     _painter.warm_up_async()
 
 
-def paint(img, theme):
-    return _painter.paint(img, theme)
+def paint(img, theme, alpha=None):
+    return _painter.paint(img, theme, alpha)
 
 
 def note_failure(message):

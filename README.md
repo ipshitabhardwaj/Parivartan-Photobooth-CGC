@@ -91,6 +91,18 @@ python server.py
 `setup_ai.py` prints the seconds each look takes on *your* GPU and saves `ai_test_<look>.jpg` so you can judge the
 result. After that the kiosk works offline. If your GPU memory is too tight it switches itself to CPU offload (slower).
 
+**What the AI painter generates per look** (Stable Diffusion img2img, then light overlays on top):
+- **Sci-Fi:** two passes. A strong repaint invents the lab around you (holograms, neon, sunset skyline), a gentle one keeps your face,
+  and they are merged with a person cut-out plus a cyan/orange rim light. The HUD corners go on top. Without a usable cut-out it does one balanced pass.
+- **Anime:** the whole picture is repainted as an anime illustration; sparkles and petals drift over it.
+- **Cats:** warm anime-style repaint; the kittens and chalk doodles are drawn on top.
+- **Vintage:** keeps its film look (add it to `AI_THEMES` to repaint it too).
+Strengths and prompts are in `STYLES` in `ai_painter.py`. `AI_STRENGTH_SCALE` (e.g. 1.2) makes every repaint bolder.
+
+**If a photo does not look AI-generated:** everything the server prints is also saved in `kiosk.log` (the last run is `kiosk.previous.log`).
+A photo gets the quick filter look when the model is still loading, when the AI took longer than `AI_BUDGET`, or after 3 AI errors in a
+row (it rests for 1 minute). The log says which, with lines starting `[AI]` and `[Look]`.
+
 **How to tell whether the AI painter is running:** look at the first lines the server prints.
 `[AI] repainting with Lykon/dreamshaper-7 for: Sci-Fi, Anime, Cats` means it is on. `[AI] repainting off (...)` means it is not,
 and the text in the brackets says why (usually torch without CUDA, or the model not downloaded yet: run `python setup_ai.py`).

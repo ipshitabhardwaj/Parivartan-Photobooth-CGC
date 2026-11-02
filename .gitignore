@@ -11,3 +11,4 @@ __pycache__/
 .launcher_state.json
 .browser_profile/
 .ai_model_ok
+kiosk*.log
